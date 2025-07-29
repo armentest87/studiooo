@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -9,7 +10,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { MetricCard } from './metric-card';
 import { GitCommit, GitPullRequest, PieChart as PieChartIcon } from 'lucide-react';
-import { eachDayOfInterval, format, differenceInDays, isAfter } from 'date-fns';
+import { eachDayOfInterval, format, differenceInDays, isAfter, parseISO, startOfDay } from 'date-fns';
 
 const COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))'];
 
@@ -32,7 +33,7 @@ export default function SprintAnalysis() {
         return acc + (estimationUnit === 'points' ? (i.fields['customfield_10004'] || 0) : 1);
       }, 0);
       return { name: sprint.name, value };
-    });
+    }).sort((a,b) => a.name.localeCompare(b.name));
   }, [estimationUnit]);
 
   const sprintAnalysis = useMemo(() => {
@@ -40,49 +41,70 @@ export default function SprintAnalysis() {
 
     const sprintIssues = issues.filter(i => i.fields['customfield_10007']?.some(s => s.id === selectedSprint.id));
     const committed = sprintIssues.reduce((acc, i) => acc + (estimationUnit === 'points' ? (i.fields['customfield_10004'] || 0) : 1), 0);
-    const completed = sprintIssues.filter(i => i.fields.status.name === 'Done').reduce((acc, i) => acc + (estimationUnit === 'points' ? (i.fields['customfield_10004'] || 0) : 1), 0);
+    const completedIssues = sprintIssues.filter(i => i.fields.status.name === 'Done');
+    const completed = completedIssues.reduce((acc, i) => acc + (estimationUnit === 'points' ? (i.fields['customfield_10004'] || 0) : 1), 0);
     const statusDistribution = sprintIssues.reduce((acc, i) => {
       acc[i.fields.status.name] = (acc[i.fields.status.name] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
     const statusData = Object.entries(statusDistribution).map(([name, value]) => ({ name, value }));
 
-    return { committed, completed, statusData, sprintIssues };
+    return { committed, completed, statusData, sprintIssues, completedIssues };
   }, [selectedSprint, estimationUnit]);
 
   const burndownData = useMemo(() => {
     if (!selectedSprint || !sprintAnalysis) return [];
     
-    const { sprintIssues } = sprintAnalysis;
-    const totalScope = sprintIssues.reduce((acc, i) => acc + (i.fields['customfield_10004'] || 1), 0);
+    const { sprintIssues, committed } = sprintAnalysis;
+    const unit_col = estimationUnit === 'points' ? 'customfield_10004' : null;
+
+    const sprintStart = startOfDay(parseISO(selectedSprint.startDate));
+    const sprintEnd = startOfDay(parseISO(selectedSprint.endDate));
+    const dateRange = eachDayOfInterval({ start: sprintStart, end: sprintEnd });
     
-    const startDate = new Date(selectedSprint.startDate);
-    const endDate = new Date(selectedSprint.endDate);
-    const dateRange = eachDayOfInterval({ start: startDate, end: endDate });
+    const resolvedIssues = sprintIssues
+        .filter(i => i.fields.resolutiondate)
+        .map(i => ({
+            resolvedDate: startOfDay(parseISO(i.fields.resolutiondate!)),
+            value: unit_col ? (i.fields[unit_col] || 0) : 1
+        }))
+        .sort((a,b) => a.resolvedDate.getTime() - b.resolvedDate.getTime());
 
-    return dateRange.map((date, index) => {
-      const remainingScope = sprintIssues.reduce((acc, issue) => {
-        const completedDate = issue.fields.resolutiondate ? new Date(issue.fields.resolutiondate) : null;
-        if (issue.fields.status.name === 'Done' && completedDate && isAfter(date, completedDate)) {
-          return acc;
-        }
-        return acc + (issue.fields['customfield_10004'] || 1);
-      }, 0);
+    if (resolvedIssues.length === 0 && committed > 0) {
+       return dateRange.map((day, index) => ({
+            day: `Day ${index + 1}`,
+            'Ideal': committed - (committed / (dateRange.length - 1) * index),
+            'Remaining': committed,
+        }));
+    }
+    
+    if (committed <= 0) return [];
+    
+    let cumulativeCompleted = 0;
+    const dailyRemaining = dateRange.map((day, index) => {
+        const completedOnDay = resolvedIssues
+            .filter(i => i.resolvedDate.getTime() === day.getTime())
+            .reduce((sum, i) => sum + i.value, 0);
+        
+        cumulativeCompleted += completedOnDay;
 
-      return {
-        day: `Day ${index + 1}`,
-        'Ideal': totalScope - (totalScope / (dateRange.length -1) * index),
-        'Remaining': remainingScope,
-      };
+        return {
+            day: `Day ${index + 1}`,
+            'Ideal': committed - (committed / (dateRange.length - 1) * index),
+            'Remaining': committed - cumulativeCompleted,
+        };
     });
-  }, [selectedSprint, sprintAnalysis]);
+
+    return dailyRemaining;
+  }, [selectedSprint, sprintAnalysis, estimationUnit]);
+
 
   return (
     <div className="flex flex-col gap-4">
       <Card>
         <CardHeader>
           <CardTitle>Historical Sprint Velocity</CardTitle>
-          <CardDescription>Amount of work completed in past sprints.</CardDescription>
+          <CardDescription>Amount of work completed in past sprints. Velocity is measured in {estimationUnit === 'points' ? 'Story Points' : 'Issue Count'}.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex justify-end mb-4">
@@ -97,14 +119,20 @@ export default function SprintAnalysis() {
               </div>
             </RadioGroup>
           </div>
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={historicalVelocity}>
-              <XAxis dataKey="name" stroke="hsl(var(--foreground))" fontSize={12} tickLine={false} axisLine={false} />
-              <YAxis stroke="hsl(var(--foreground))" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false}/>
-              <Tooltip cursor={{ fill: 'hsl(var(--muted))' }} contentStyle={{ background: "hsl(var(--background))", borderColor: "hsl(var(--border))" }} />
-              <Bar dataKey="value" name={estimationUnit === 'points' ? 'Story Points' : 'Issues'} fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+           {historicalVelocity.length > 0 && historicalVelocity.some(v => v.value > 0) ? (
+            <ResponsiveContainer width="100%" height={250}>
+              <BarChart data={historicalVelocity}>
+                <XAxis dataKey="name" stroke="hsl(var(--foreground))" fontSize={12} tickLine={false} axisLine={false} />
+                <YAxis stroke="hsl(var(--foreground))" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false}/>
+                <Tooltip cursor={{ fill: 'hsl(var(--muted))' }} contentStyle={{ background: "hsl(var(--background))", borderColor: "hsl(var(--border))" }} formatter={(value) => `${(value as number).toFixed(1)}`} />
+                <Bar dataKey="value" name={estimationUnit === 'points' ? 'Story Points' : 'Issues'} fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+           ) : (
+            <div className="flex items-center justify-center h-[250px] text-muted-foreground">
+                No completed issues with {estimationUnit === 'points' ? 'story points' : 'counts'} found to calculate velocity.
+            </div>
+           )}
         </CardContent>
       </Card>
 
@@ -127,11 +155,11 @@ export default function SprintAnalysis() {
             </Select>
           </div>
         </CardHeader>
-        {sprintAnalysis && (
+        {sprintAnalysis && selectedSprint && (
           <CardContent className="grid gap-4">
-             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                <MetricCard title="Committed" value={sprintAnalysis.committed} icon={GitCommit} description={estimationUnit === 'points' ? 'Story Points' : 'Issues'} />
-                <MetricCard title="Completed" value={sprintAnalysis.completed} icon={GitPullRequest} description={estimationUnit === 'points' ? 'Story Points' : 'Issues'} />
+             <div className="grid gap-4 md:grid-cols-3">
+                <MetricCard title="Committed" value={sprintAnalysis.committed.toFixed(1)} icon={GitCommit} description={estimationUnit === 'points' ? 'Story Points' : 'Issues'} />
+                <MetricCard title="Completed" value={sprintAnalysis.completed.toFixed(1)} icon={GitPullRequest} description={estimationUnit === 'points' ? 'Story Points' : 'Issues'} />
                 <MetricCard title="Completion Rate" value={`${sprintAnalysis.committed > 0 ? ((sprintAnalysis.completed / sprintAnalysis.committed) * 100).toFixed(0) : 0}%`} icon={PieChartIcon} />
             </div>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
@@ -157,19 +185,25 @@ export default function SprintAnalysis() {
                 <Card className="lg:col-span-4">
                     <CardHeader>
                         <CardTitle>Burndown Chart</CardTitle>
-                        <CardDescription>Remaining work over the course of the sprint.</CardDescription>
+                        <CardDescription>Remaining work over the course of the sprint, measured in {estimationUnit === 'points' ? 'Story Points' : 'Issue Count'}.</CardDescription>
                     </CardHeader>
                     <CardContent>
+                        {burndownData.length > 0 ? (
                         <ResponsiveContainer width="100%" height={300}>
                             <LineChart data={burndownData}>
                                 <XAxis dataKey="day" stroke="hsl(var(--foreground))" fontSize={12} />
-                                <YAxis stroke="hsl(var(--foreground))" fontSize={12}/>
-                                <Tooltip contentStyle={{ background: "hsl(var(--background))", borderColor: "hsl(var(--border))" }} />
+                                <YAxis stroke="hsl(var(--foreground))" fontSize={12} domain={[0, 'dataMax']} allowDecimals={false}/>
+                                <Tooltip contentStyle={{ background: "hsl(var(--background))", borderColor: "hsl(var(--border))" }} formatter={(value) => (value as number).toFixed(1)} />
                                 <Legend />
                                 <Line type="monotone" dataKey="Ideal" stroke="hsl(var(--muted-foreground))" strokeDasharray="5 5" dot={false} />
-                                <Line type="monotone" dataKey="Remaining" stroke="hsl(var(--primary))" strokeWidth={2} />
+                                <Line type="monotone" dataKey="Remaining" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
                             </LineChart>
                         </ResponsiveContainer>
+                        ) : (
+                             <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                                No resolved issues with estimation data found to draw a burndown chart.
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
             </div>
