@@ -10,6 +10,7 @@ import {
   Target,
   Clock,
   Menu,
+  Database,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -22,12 +23,12 @@ import { JiraIcon } from '@/components/dashboard/icons';
 import { cn } from '@/lib/utils';
 
 const navigationItems = [
+  { href: '/data-fetcher', icon: Database, label: 'Data Fetcher' },
   { href: '/helicopter-view', icon: LayoutGrid, label: 'Helicopter View' },
   { href: '/overview', icon: BarChart2, label: 'Overview' },
   { href: '/cumulative-flow', icon: AreaChart, label: 'Cumulative Flow' },
   { href: '/sprint-analysis', icon: Target, label: 'Sprint Analysis' },
   { href: '/timework-report', icon: Clock, label: 'Timework Report' },
-  { href: '/configuration-assistant', icon: Settings, label: 'AI Assistant' },
 ];
 
 function SidebarNav() {

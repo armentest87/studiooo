@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 
 export default function Home() {
   useEffect(() => {
-    redirect('/helicopter-view');
+    redirect('/data-fetcher');
   }, []);
 
   return null;
