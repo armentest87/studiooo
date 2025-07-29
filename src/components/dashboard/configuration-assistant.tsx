@@ -1,6 +1,7 @@
 'use client';
 
-import { useFormState, useFormStatus } from 'react-dom';
+import { useActionState, useMemo } from 'react';
+import { useFormStatus } from 'react-dom';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -8,7 +9,6 @@ import { getConfigurationSuggestions } from '@/app/actions';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Lightbulb, Terminal, Loader2 } from 'lucide-react';
 import { issues, projects } from '@/lib/mock-data';
-import { useMemo } from 'react';
 
 const initialState = {
   suggestions: '',
@@ -26,7 +26,7 @@ function SubmitButton() {
 }
 
 export default function ConfigurationAssistant() {
-  const [state, formAction] = useFormState(getConfigurationSuggestions, initialState);
+  const [state, formAction] = useActionState(getConfigurationSuggestions, initialState);
 
   const defaultSummary = useMemo(() => {
     const totalProjects = projects.length;
