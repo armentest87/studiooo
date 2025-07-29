@@ -1,7 +1,9 @@
+
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 import {
   BarChart2,
   Settings,
@@ -11,6 +13,7 @@ import {
   Clock,
   Menu,
   Database,
+  LogOut,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -21,6 +24,13 @@ import {
 } from '@/components/ui/sheet';
 import { JiraIcon } from '@/components/dashboard/icons';
 import { cn } from '@/lib/utils';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+
 
 const navigationItems = [
   { href: '/data-fetcher', icon: Database, label: 'Data Fetcher' },
@@ -58,7 +68,22 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const router = useRouter();
+
+  useEffect(() => {
+    const creds = localStorage.getItem('jira_credentials');
+    if (!creds) {
+      router.push('/login');
+    }
+  }, [router]);
+
+  const handleLogout = () => {
+    localStorage.removeItem('jira_credentials');
+    router.push('/login');
+  }
+
   return (
+    <TooltipProvider>
     <div className="grid min-h-screen w-full md:grid-cols-[220px_1fr] lg:grid-cols-[280px_1fr]">
       <div className="hidden border-r bg-background md:block">
         <div className="flex h-full max-h-screen flex-col gap-2">
@@ -68,9 +93,22 @@ export default function DashboardLayout({
               <span className="">Jira Insights Lite</span>
             </Link>
           </div>
-          <div className="flex-1">
+          <div className="flex-1 overflow-auto py-2">
             <SidebarNav />
           </div>
+           <div className="mt-auto p-4 border-t">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                   <Button variant="ghost" className="w-full justify-start gap-2" onClick={handleLogout}>
+                      <LogOut className="h-4 w-4" />
+                      Logout
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right">
+                  <p>Disconnect from Jira</p>
+                </TooltipContent>
+              </Tooltip>
+           </div>
         </div>
       </div>
       <div className="flex flex-col">
@@ -82,14 +120,22 @@ export default function DashboardLayout({
                 <span className="sr-only">Toggle navigation menu</span>
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="flex flex-col">
+            <SheetContent side="left" className="flex flex-col p-0">
               <div className="flex h-14 items-center border-b px-4 lg:h-[60px] lg:px-6">
                 <Link href="/" className="flex items-center gap-2 font-semibold">
                   <JiraIcon className="h-6 w-6 text-primary" />
                   <span className="">Jira Insights Lite</span>
                 </Link>
               </div>
-              <SidebarNav />
+              <div className="flex-1 overflow-auto py-2">
+                <SidebarNav />
+              </div>
+              <div className="mt-auto p-4 border-t">
+                 <Button variant="ghost" className="w-full justify-start gap-2" onClick={handleLogout}>
+                    <LogOut className="h-4 w-4" />
+                    Logout
+                  </Button>
+              </div>
             </SheetContent>
           </Sheet>
           <div className="w-full flex-1">
@@ -101,5 +147,6 @@ export default function DashboardLayout({
         </main>
       </div>
     </div>
+    </TooltipProvider>
   );
 }
