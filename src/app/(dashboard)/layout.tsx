@@ -14,6 +14,7 @@ import {
   Menu,
   Database,
   LogOut,
+  User as UserIcon,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -34,6 +35,7 @@ import {
 
 const navigationItems = [
   { href: '/data-fetcher', icon: Database, label: 'Data Fetcher' },
+  { href: '/my-dashboard', icon: UserIcon, label: 'My Dashboard' },
   { href: '/helicopter-view', icon: LayoutGrid, label: 'Helicopter View' },
   { href: '/overview', icon: BarChart2, label: 'Overview' },
   { href: '/cumulative-flow', icon: AreaChart, label: 'Cumulative Flow' },
